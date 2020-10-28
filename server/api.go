@@ -432,6 +432,16 @@ func parseBearerAuth(hmacSecretByte []byte, auth string) (userID uuid.UUID, user
 	return parseToken(hmacSecretByte, auth[len(prefix):])
 }
 
+func parseTokenSkillz(hmacSecretByte []byte, tokenString string) (userID uuid.UUID, userIdSkillz string, username string, vars map[string]string, exp int64, ok bool) {
+	userID, username, vars, exp, ok = parseToken(hmacSecretByte, tokenString)
+
+	if !ok {
+		return
+	}
+
+	return userID, "", username, vars, exp, ok
+}
+
 func parseToken(hmacSecretByte []byte, tokenString string) (userID uuid.UUID, username string, vars map[string]string, exp int64, ok bool) {
 	token, err := jwt.ParseWithClaims(tokenString, &SessionTokenClaims{}, func(token *jwt.Token) (interface{}, error) {
 		if s, ok := token.Method.(*jwt.SigningMethodHMAC); !ok || s.Hash != crypto.SHA256 {

@@ -15,26 +15,36 @@
 # docker build "$PWD" --build-arg commit="$(git rev-parse --short HEAD)" --build-arg version=v2.1.1 -t heroiclabs/nakama:2.1.1
 # docker build "$PWD" --build-arg commit="$(git rev-parse --short HEAD)" --build-arg version="v2.1.1-$(git rev-parse --short HEAD)" -t heroiclabs/nakama-prerelease:"2.1.1-$(git rev-parse --short HEAD)"
 
-FROM golang:1.14.5-buster as builder
+FROM golang:1.15.0-alpine3.12 as builder
 
 ARG commit
+ARG lua_commit
 ARG version
 
 ENV GOOS linux
 ENV GOARCH amd64
 ENV CGO_ENABLED 1
 
-RUN apt-get update && \
-    apt-get -y upgrade && \
-    apt-get install -y --no-install-recommends ca-certificates gcc libc6-dev git && \
+#RUN apt-get update && \
+#    apt-get -y upgrade && \
+#    apt-get install -y --no-install-recommends ca-certificates gcc libc6-dev git && \
+#    git config --global advice.detachedHead false && \
+#    git clone --quiet --no-checkout https://github.com/aaron-skillz/sync-server-go /go/build/nakama && \
+#    git clone --quiet https://github.com/aaron-skillz/sync-server-docker-lua /lua/nakama
+RUN apk add --no-cache ca-certificates gcc libc6-compat libc-dev git && \
     git config --global advice.detachedHead false && \
-    git clone --quiet --no-checkout https://github.com/aaron-skillz/sync-server-go /go/build/nakama
+    git clone --quiet --no-checkout https://github.com/aaron-skillz/sync-server-go /go/build/nakama && \
+    git clone --quiet https://github.com/aaron-skillz/sync-server-docker-lua /lua/nakama
 
 WORKDIR /go/build/nakama
 RUN git checkout --quiet "$commit" && \
     go build -o /go/build-out/nakama -trimpath -mod=mod -gcflags "-trimpath $PWD" -asmflags "-trimpath $PWD" -ldflags "-s -w -X main.version=$version -X main.commitID=$commit"
 
-FROM debian:buster-slim
+WORKDIR /lua/nakama
+RUN git checkout --quiet "$lua_commit"
+
+#FROM debian:buster-slim
+FROM alpine:3.12
 
 ARG version
 
@@ -42,16 +52,22 @@ LABEL version=$version
 LABEL variant=nakama
 LABEL description="Distributed server realtime games and apps."
 
+#RUN mkdir -p /nakama/data/modules && \
+#    apt-get update && \
+#    apt-get -y upgrade && \
+#    apt-get install -y --no-install-recommends ca-certificates tzdata curl iproute2 unzip rsync git tini schroot && \
+#    apt-get clean && \
+#    rm -rf /var/lib/apt/lists/*
 RUN mkdir -p /nakama/data/modules && \
-    apt-get update && \
-    apt-get -y upgrade && \
-    apt-get install -y --no-install-recommends ca-certificates tzdata curl iproute2 unzip rsync git tini schroot && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+    apk add --no-cache ca-certificates tzdata curl iproute2 unzip rsync git tini
 
 WORKDIR /nakama/
 COPY --from=builder "/go/build-out/nakama" /nakama/
 EXPOSE 7349 7350
+#EXPOSE 7350
+
+# copy lua scripts into container
+COPY --from=builder "/lua/nakama/modules" /nakama/data/modules
 
 ENTRYPOINT ["tini", "--", "/nakama/nakama"]
 
